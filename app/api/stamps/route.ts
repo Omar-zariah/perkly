@@ -1,0 +1,2 @@
+import {NextRequest,NextResponse} from 'next/server';import {session,fail,isUuid} from '@/lib/http';
+export async function POST(req:NextRequest){const s=await session();if(!s)return fail('Sign in required',401);try{const {businessId,membershipId}=await req.json();if(!isUuid(businessId)||!isUuid(membershipId))return fail('Invalid card');const {data,error}=await s.db.rpc('award_stamp',{p_business:businessId,p_membership:membershipId});if(error)return fail(error.message,403);return NextResponse.json({result:data?.[0]});}catch{return fail('Invalid request');}}

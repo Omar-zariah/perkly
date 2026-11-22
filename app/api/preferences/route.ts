@@ -1,0 +1,2 @@
+import {NextRequest,NextResponse} from 'next/server';import {session,fail,isUuid} from '@/lib/http';
+export async function POST(req:NextRequest){const s=await session();if(!s)return fail('Sign in required',401);try{const {membershipId,optIn}=await req.json();if(!isUuid(membershipId)||typeof optIn!=='boolean')return fail('Invalid preference');const {error}=await s.db.rpc('set_marketing_preference',{p_membership:membershipId,p_opt_in:optIn});if(error)return fail(error.message,403);return NextResponse.json({ok:true});}catch{return fail('Invalid request');}}
