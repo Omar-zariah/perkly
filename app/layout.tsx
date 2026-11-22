@@ -1,7 +1,7 @@
 import './style.css';
 import Link from 'next/link';
 import { getUser } from '@/lib/supabase';
-import { Coffee, LayoutDashboard, Wallet, LogIn } from 'lucide-react';
+import { Coffee, LayoutDashboard, Wallet, LogIn, ScanLine } from 'lucide-react';
 import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
@@ -46,6 +46,11 @@ export default async function Layout({
             <Link href="/wallet">
               <Wallet size={16} /> My wallet
             </Link>
+            {user && (
+              <Link href="/scan">
+                <ScanLine size={16} /> Scan
+              </Link>
+            )}
             <Link className="nav-cta" href="/login">
               <LogIn size={15} />
               {user ? 'Account' : 'Get started'}
