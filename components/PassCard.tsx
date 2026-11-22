@@ -54,6 +54,16 @@ export default function PassCard({ pass }: { pass: PassData }) {
     document.documentElement.setAttribute('lang', locale);
   }, [locale, t.dir]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('wallet') === '1' || params.get('new') === '1') {
+        setWalletModal(true);
+        setWalletTab('pwa');
+      }
+    }
+  }, []);
+
   async function refreshBalance() {
     setRefreshing(true);
     try {

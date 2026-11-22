@@ -43,14 +43,18 @@ export default async function Merchant({params}:{params:Promise<{id:string}>}){
         <div className="panel stat"><span>Récompenses échangées</span><b>{rewards}</b><span>1 000 derniers événements</span></div>
       </div>
 
-      {/* QR codes section */}
-      {(branches||[]).length>0 && (
-        <div className="panel" style={{marginBottom:20}}>
-          <h3 style={{marginBottom:16}}>📍 QR codes comptoir par succursale</h3>
-          <p className="small muted" style={{marginBottom:18}}>Imprimez ce QR et placez-le sur votre comptoir. Copiez l'URL pour programmer un tag NFC.</p>
-          <BranchQRSection branches={(branches||[]).map(br=>({...br,businessSlug:b.slug,appUrl}))} />
-        </div>
-      )}
+      {/* QR codes & Counter Display section */}
+      <div className="panel" style={{marginBottom:20}}>
+        <h3 style={{marginBottom:8}}>📍 Générateur de QR Code & Chevalet de Comptoir</h3>
+        <p className="small muted" style={{marginBottom:18}}>
+          Vos clients scannent ce QR code ou approchent leur téléphone (NFC) pour créer leur carte et l'ajouter instantanément à leur portefeuille mobile.
+        </p>
+        <BranchQRSection
+          business={b}
+          branches={(branches||[]).map(br=>({...br,businessSlug:b.slug,appUrl}))}
+          appUrl={appUrl}
+        />
+      </div>
 
       {/* Customer list */}
       {(customers||[]).length>0 && (

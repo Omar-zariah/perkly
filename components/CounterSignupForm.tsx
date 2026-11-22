@@ -124,7 +124,8 @@ export default function CounterSignupForm({ business, branch }: CounterSignupFor
       setPassToken(data.passToken);
       setIsNew(data.isNew);
       setCustomerName(data.firstName || firstName.trim());
-      setStep('success');
+      // Immediately open personal pass & trigger phone wallet save
+      window.location.href = `/pass/${data.passToken}?wallet=1`;
     } catch {
       setError(locale === 'ar' ? 'خطأ في الاتصال. تحقق من الإنترنت.' : 'Erreur de connexion. Vérifiez votre réseau.');
     }
@@ -151,7 +152,8 @@ export default function CounterSignupForm({ business, branch }: CounterSignupFor
       setPassToken(data.passToken);
       setIsNew(false);
       setCustomerName(data.firstName || firstName.trim());
-      setStep('success');
+      // Immediately open personal pass & trigger phone wallet save
+      window.location.href = `/pass/${data.passToken}?wallet=1`;
     } catch {
       setError(locale === 'ar' ? 'خطأ في الاتصال.' : 'Erreur de connexion.');
     }
