@@ -1,6 +1,7 @@
 'use client';
-import { Copy, Download, Check, Printer, ExternalLink, Wifi, Coffee } from 'lucide-react';
-import { useState } from 'react';
+import { Copy, Download, Check, Printer, ExternalLink, Wifi, Coffee, Image as ImageIcon } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface Branch {
   id: string;
@@ -33,15 +34,15 @@ export default function BranchQRSection({ business, branches, appUrl }: CounterQ
     branches.length > 0 ? branches[0].slug : ''
   );
   const [copied, setCopied] = useState<string | null>(null);
+  const qrRef = useRef<HTMLDivElement>(null);
+
+  // If on client, prefer window.location.origin so localhost / local IP / production domain is always accurate
+  const origin = typeof window !== 'undefined' ? window.location.origin : appUrl;
 
   const activeBranch = branches.find(b => b.slug === selectedBranchSlug);
   const currentSignupUrl = activeBranch
-    ? `${appUrl}/${business.slug}/${activeBranch.slug}`
-    : `${appUrl}/${business.slug}`;
-
-  const currentQrSrc = activeBranch
-    ? `/api/qr/${business.slug}/${activeBranch.slug}`
-    : `/api/qr/${business.slug}`;
+    ? `${origin}/${business.slug}/${activeBranch.slug}`
+    : `${origin}/${business.slug}`;
 
   const offerText = business.offer_sentence_fr || `Achetez ${business.stamps_required} cafés et obtenez ${business.reward_name.toLowerCase()} offert !`;
   const offerTextAr = business.offer_sentence_ar || `اشتري ${business.stamps_required} قهوات واحصل على ${business.reward_name} مجاناً !`;
@@ -52,11 +53,47 @@ export default function BranchQRSection({ business, branches, appUrl }: CounterQ
     setTimeout(() => setCopied(null), 2500);
   }
 
-  function downloadQR(filename: string) {
+  function downloadSvg(filename: string) {
+    if (!qrRef.current) return;
+    const svgEl = qrRef.current.querySelector('svg');
+    if (!svgEl) return;
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const a = document.createElement('a');
-    a.href = currentQrSrc;
+    a.href = URL.createObjectURL(blob);
     a.download = `${filename.toLowerCase().replace(/\s+/g, '-')}-qr.svg`;
     a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function downloadPng(filename: string) {
+    if (!qrRef.current) return;
+    const svgEl = qrRef.current.querySelector('svg');
+    if (!svgEl) return;
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    canvas.width = 600;
+    canvas.height = 600;
+
+    img.onload = () => {
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 600, 600);
+        ctx.drawImage(img, 30, 30, 540, 540);
+        const pngUrl = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = pngUrl;
+        a.download = `${filename.toLowerCase().replace(/\s+/g, '-')}-qr.png`;
+        a.click();
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
   }
 
   function handlePrint() {
@@ -65,10 +102,10 @@ export default function BranchQRSection({ business, branches, appUrl }: CounterQ
 
   return (
     <div className="counter-qr-hub">
-      {/* Branch selector if multiple */}
+      {/* Branch selector if multiple branches */}
       {branches.length > 1 && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
-          <span className="small muted" style={{ fontWeight: 700 }}>Succursale active :</span>
+          <span className="small muted" style={{ fontWeight: 700 }}>Succursale :</span>
           {branches.map(br => (
             <button
               key={br.id}
@@ -100,23 +137,27 @@ export default function BranchQRSection({ business, branches, appUrl }: CounterQ
 
           {/* QR Code Body */}
           <div className="stand-body">
-            <div className="stand-qr-frame">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={currentQrSrc} alt={`QR Code ${business.name}`} className="stand-qr-img" />
+            <div className="stand-qr-frame" ref={qrRef}>
+              <QRCodeSVG
+                value={currentSignupUrl}
+                size={220}
+                level="M"
+                includeMargin={false}
+              />
             </div>
 
             <div className="stand-instructions">
               <div className="instruction-step">
                 <span className="step-num">1</span>
-                <span><b>Scannez</b> le QR code avec l'appareil photo ou <b>approchez</b> votre smartphone (NFC)</span>
+                <span><b>Scannez</b> avec votre appareil photo ou <b>approchez</b> votre téléphone (NFC)</span>
               </div>
               <div className="instruction-step">
                 <span className="step-num">2</span>
-                <span>Entrez votre <b>prénom & téléphone</b> (sans mot de passe)</span>
+                <span>Entrez votre <b>prénom & mobile</b> (sans mot de passe)</span>
               </div>
               <div className="instruction-step">
                 <span className="step-num">3</span>
-                <span>Votre <b>carte s'ajoute directement à votre téléphone</b> & cumulez vos cafés !</span>
+                <span>Votre <b>carte s'ajoute à votre téléphone</b> & cumulez vos cafés !</span>
               </div>
             </div>
 
@@ -124,7 +165,7 @@ export default function BranchQRSection({ business, branches, appUrl }: CounterQ
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: '#163f2c', fontWeight: 700 }}>
                 <Wifi size={14} style={{ transform: 'rotate(90deg)' }} /> Compatible NFC & Tous Smartphones (Apple & Android)
               </div>
-              <div style={{ fontSize: 11, color: '#777', marginTop: 4, wordBreak: 'break-all' }}>
+              <div style={{ fontSize: 11, color: '#777', marginTop: 5, wordBreak: 'break-all', fontFamily: 'monospace' }}>
                 {currentSignupUrl}
               </div>
             </div>
@@ -138,13 +179,17 @@ export default function BranchQRSection({ business, branches, appUrl }: CounterQ
           <Printer size={16} /> Imprimer le chevalet comptoir
         </button>
 
-        <button type="button" className="btn secondary" onClick={() => downloadQR(activeBranch?.name || business.name)}>
-          <Download size={16} /> Télécharger QR (SVG)
+        <button type="button" className="btn secondary" onClick={() => downloadPng(activeBranch?.name || business.name)}>
+          <ImageIcon size={16} /> Télécharger Image (PNG)
+        </button>
+
+        <button type="button" className="btn secondary" onClick={() => downloadSvg(activeBranch?.name || business.name)}>
+          <Download size={16} /> Télécharger Vector (SVG)
         </button>
 
         <button type="button" className="btn secondary" onClick={() => copyUrl(currentSignupUrl, 'nfc')}>
           {copied === 'nfc' ? <Check size={16} /> : <Copy size={16} />}
-          {copied === 'nfc' ? 'URL NFC copiée !' : 'Copier URL pour Tag NFC'}
+          {copied === 'nfc' ? 'URL NFC copiée !' : 'Copier URL NFC'}
         </button>
 
         <a

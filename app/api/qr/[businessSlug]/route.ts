@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ businessSlug: string }> }
 ) {
   const { businessSlug } = await params;
-  const admin = supabaseAdmin();
+  if (!businessSlug) {
+    return NextResponse.json({ error: 'Missing business slug' }, { status: 400 });
+  }
 
-  const { data: business } = await admin
-    .from('businesses')
-    .select('id, name, slug')
-    .eq('slug', businessSlug)
-    .single();
-
-  if (!business) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const host = req.headers.get('host') || 'localhost:3000';
+  const protocol = req.headers.get('x-forwarded-proto') || (host.startsWith('localhost') ? 'http' : 'https');
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
   const signupUrl = `${appUrl}/${businessSlug}`;
 
   try {
@@ -27,13 +22,15 @@ export async function GET(
       margin: 2,
       color: { dark: '#163f2c', light: '#ffffff' },
     });
+
     return new NextResponse(svg, {
       headers: {
-        'Content-Type': 'image/svg+xml',
-        'Cache-Control': 'public, max-age=3600',
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600, s-maxage=3600',
       },
     });
-  } catch {
-    return NextResponse.json({ error: 'QR generation failed' }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'QR generation failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

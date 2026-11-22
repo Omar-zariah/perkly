@@ -31,9 +31,13 @@ export default function ScanPage() {
   }
 
   function extractToken(raw: string) {
-    const t = raw.trim();
+    let t = raw.trim();
     if (t.startsWith('perkly:pass:')) return t.slice('perkly:pass:'.length);
     if (t.startsWith('perkly:member:')) return t.slice('perkly:member:'.length);
+    if (t.includes('/pass/')) {
+      const parts = t.split('/pass/')[1];
+      return parts.split('?')[0].split('#')[0].replace(/\/+$/, '');
+    }
     return t;
   }
 
