@@ -108,9 +108,14 @@ create index if not exists idx_otp_biz_phone on public.otp_verifications(busines
 alter table public.branches enable row level security;
 alter table public.otp_verifications enable row level security;
 
--- Policies for branches
+-- Policies for branches & businesses public catalog
+drop policy if exists "branches public read" on public.branches;
 create policy "branches public read" on public.branches for select to public using(true);
 create policy "staff manage branches" on public.branches for all to authenticated using(public.is_business_admin(business_id));
+
+drop policy if exists "business public catalog" on public.businesses;
+drop policy if exists "businesses public read" on public.businesses;
+create policy "businesses public read" on public.businesses for select to public using(true);
 
 -- ==============================================================================
 -- 6. STORED PROCEDURES (RPCS)

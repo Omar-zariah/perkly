@@ -20,12 +20,17 @@ export async function POST(req: NextRequest) {
 
     const admin = supabaseAdmin();
 
-    // Look up business by slug
-    const { data: business, error: bizErr } = await admin
+    // Look up business by slug or UUID
+    const isBizUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(businessSlug.trim());
+    let bizQuery = admin
       .from('businesses')
-      .select('id, name, stamps_required, reward_name')
-      .eq('slug', businessSlug)
-      .single();
+      .select('id, name, stamps_required, reward_name');
+    if (isBizUuid) {
+      bizQuery = bizQuery.eq('id', businessSlug.trim());
+    } else {
+      bizQuery = bizQuery.ilike('slug', businessSlug.trim());
+    }
+    const { data: business, error: bizErr } = await bizQuery.maybeSingle();
 
     if (bizErr || !business) {
       return NextResponse.json({ error: 'Café not found' }, { status: 404 });
@@ -34,12 +39,17 @@ export async function POST(req: NextRequest) {
     // Look up branch if branchSlug provided
     let branchId: string | null = null;
     if (branchSlug) {
-      const { data: branch } = await admin
+      const isBranchUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchSlug.trim());
+      let bQuery = admin
         .from('branches')
         .select('id')
-        .eq('business_id', business.id)
-        .eq('slug', branchSlug)
-        .single();
+        .eq('business_id', business.id);
+      if (isBranchUuid) {
+        bQuery = bQuery.eq('id', branchSlug.trim());
+      } else {
+        bQuery = bQuery.ilike('slug', branchSlug.trim());
+      }
+      const { data: branch } = await bQuery.maybeSingle();
       branchId = branch?.id ?? null;
     }
 
