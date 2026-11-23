@@ -41,14 +41,14 @@ create index if not exists idx_branches_biz on public.branches(business_id);
 alter table public.memberships
   add column if not exists first_name text,
   add column if not exists phone text,
-  add column if not exists pass_token text default encode(gen_random_bytes(16), 'hex'),
+  add column if not exists pass_token text default replace(gen_random_uuid()::text, '-', ''),
   add column if not exists branch_id uuid references public.branches(id) on delete set null,
   add column if not exists total_stamps_earned int not null default 0 check(total_stamps_earned >= 0),
   add column if not exists last_visit_at timestamptz,
   add column if not exists preferred_language text default 'fr' check(preferred_language in ('fr', 'ar'));
 
 -- Backfill pass_token if null
-update public.memberships set pass_token = encode(gen_random_bytes(16), 'hex') where pass_token is null;
+update public.memberships set pass_token = replace(gen_random_uuid()::text, '-', '') where pass_token is null;
 alter table public.memberships alter column pass_token set not null;
 
 create unique index if not exists idx_memberships_pass_token on public.memberships(pass_token);
@@ -130,7 +130,7 @@ create or replace function public.join_cafe_customer(
   p_opt_in boolean default false,
   p_lang text default 'fr'
 )
-returns jsonb language plpgsql security definer set search_path = '' as $$
+returns jsonb language plpgsql security definer set search_path = public, pg_catalog, extensions as $$
 declare
   v_biz public.businesses%rowtype;
   v_branch_id uuid := null;
@@ -140,8 +140,9 @@ declare
   v_clean_name text := trim(coalesce(p_first_name, 'Client'));
   v_pass_token text;
 begin
-  -- Validate business
-  select * into v_biz from public.businesses where slug = lower(trim(p_business_slug));
+  -- Validate business by slug or id
+  select * into v_biz from public.businesses 
+  where slug = lower(trim(p_business_slug)) or id::text = trim(p_business_slug);
   if not found then
     raise exception 'Café introuvable / Business not found';
   end if;
@@ -149,7 +150,7 @@ begin
   -- Resolve branch if provided
   if p_branch_slug is not null and trim(p_branch_slug) <> '' then
     select id into v_branch_id from public.branches 
-    where business_id = v_biz.id and slug = lower(trim(p_branch_slug));
+    where business_id = v_biz.id and (slug = lower(trim(p_branch_slug)) or id::text = trim(p_branch_slug));
   end if;
 
   -- Default to first branch if none specified
@@ -172,7 +173,7 @@ begin
     v_is_new := false;
   else
     -- New customer: create membership with 0 stamps and unique pass token
-    v_pass_token := encode(gen_random_bytes(16), 'hex');
+    v_pass_token := replace(gen_random_uuid()::text, '-', '');
     insert into public.memberships (
       business_id,
       branch_id,

@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: phoneResult.error || 'Invalid phone number' }, { status: 400 });
     }
     const normalizedPhone = phoneResult.normalized;
+    const cleanName = firstName.trim();
 
     const admin = supabaseAdmin();
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const isBizUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(businessSlug.trim());
     let bizQuery = admin
       .from('businesses')
-      .select('id, name, stamps_required, reward_name');
+      .select('id, name, slug, stamps_required, reward_name');
     if (isBizUuid) {
       bizQuery = bizQuery.eq('id', businessSlug.trim());
     } else {
@@ -38,11 +39,12 @@ export async function POST(req: NextRequest) {
 
     // Look up branch if branchSlug provided
     let branchId: string | null = null;
+    let validBranchSlug: string | null = null;
     if (branchSlug) {
       const isBranchUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(branchSlug.trim());
       let bQuery = admin
         .from('branches')
-        .select('id')
+        .select('id, slug')
         .eq('business_id', business.id);
       if (isBranchUuid) {
         bQuery = bQuery.eq('id', branchSlug.trim());
@@ -50,10 +52,13 @@ export async function POST(req: NextRequest) {
         bQuery = bQuery.ilike('slug', branchSlug.trim());
       }
       const { data: branch } = await bQuery.maybeSingle();
-      branchId = branch?.id ?? null;
+      if (branch) {
+        branchId = branch.id;
+        validBranchSlug = branch.slug;
+      }
     }
 
-    // Check for existing membership by phone in this business
+    // 1. Check if customer already exists for this business + phone
     const { data: existing } = await admin
       .from('memberships')
       .select('id, pass_token, first_name, stamps, rewards_available, preferred_language')
@@ -62,68 +67,111 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (existing) {
-      // Returning customer — check if same device (cookie check would be ideal but we're stateless here)
-      // Return their existing card data — no OTP needed for counter (staff is present)
       return NextResponse.json({
         passToken: existing.pass_token,
         isNew: false,
-        firstName: existing.first_name || firstName.trim(),
+        firstName: existing.first_name || cleanName,
         businessName: business.name,
         stamps: existing.stamps || 0,
         rewards: existing.rewards_available || 0,
       });
     }
 
-    // New customer — create membership using RPC
+    // 2. Try the PostgreSQL RPC with the exact signature: p_business_slug, p_branch_slug
+    let passToken: string | null = null;
+    let isNewCustomer = true;
+
     const { data: rpc, error: rpcErr } = await admin.rpc('join_cafe_customer', {
-      p_business_id: business.id,
-      p_branch_id: branchId,
-      p_first_name: firstName.trim(),
+      p_business_slug: business.slug || businessSlug.trim(),
+      p_branch_slug: validBranchSlug || (branchSlug ? branchSlug.trim() : null),
+      p_first_name: cleanName,
       p_phone: normalizedPhone,
-      p_opt_in: optIn,
-      p_lang: lang,
+      p_opt_in: Boolean(optIn),
+      p_lang: lang || 'fr',
     });
 
-    if (rpcErr) {
-      console.error('join_cafe_customer error:', rpcErr);
-      // If unique constraint violation on phone, return existing
-      if (rpcErr.code === '23505') {
-        const { data: retryExisting } = await admin
+    if (!rpcErr && rpc?.pass_token) {
+      passToken = rpc.pass_token;
+      isNewCustomer = rpc.is_new ?? true;
+    } else {
+      console.warn('RPC join_cafe_customer failed or returned null, attempting direct insert:', rpcErr);
+
+      // Fallback: Check if row was created despite error or already exists
+      const { data: retryCheck } = await admin
+        .from('memberships')
+        .select('id, pass_token, first_name, stamps, rewards_available')
+        .eq('business_id', business.id)
+        .eq('phone', normalizedPhone)
+        .maybeSingle();
+
+      if (retryCheck) {
+        return NextResponse.json({
+          passToken: retryCheck.pass_token,
+          isNew: false,
+          firstName: retryCheck.first_name || cleanName,
+          businessName: business.name,
+          stamps: retryCheck.stamps || 0,
+          rewards: retryCheck.rewards_available || 0,
+        });
+      }
+
+      // Direct insertion fallback (guarantees signup succeeds)
+      const generatedToken = crypto.randomUUID().replace(/-/g, '');
+      const { data: newRow, error: insertErr } = await admin
+        .from('memberships')
+        .insert({
+          business_id: business.id,
+          branch_id: branchId,
+          first_name: cleanName,
+          phone: normalizedPhone,
+          pass_token: generatedToken,
+          stamps: 0,
+          total_visits: 0,
+          rewards_available: 0,
+          marketing_opt_in: Boolean(optIn),
+          preferred_language: lang || 'fr',
+        })
+        .select('id, pass_token, first_name')
+        .single();
+
+      if (insertErr) {
+        console.error('Direct insert fallback failed:', insertErr);
+        // Double check in case of race condition / unique constraint
+        const { data: finalCheck } = await admin
           .from('memberships')
           .select('id, pass_token, first_name, stamps, rewards_available')
           .eq('business_id', business.id)
           .eq('phone', normalizedPhone)
           .maybeSingle();
-        if (retryExisting) {
+
+        if (finalCheck) {
           return NextResponse.json({
-            passToken: retryExisting.pass_token,
+            passToken: finalCheck.pass_token,
             isNew: false,
-            firstName: retryExisting.first_name || firstName.trim(),
+            firstName: finalCheck.first_name || cleanName,
             businessName: business.name,
-            stamps: retryExisting.stamps || 0,
-            rewards: retryExisting.rewards_available || 0,
+            stamps: finalCheck.stamps || 0,
+            rewards: finalCheck.rewards_available || 0,
           });
         }
+        return NextResponse.json({ error: 'Could not create membership. Please try again.' }, { status: 500 });
       }
-      return NextResponse.json({ error: 'Could not create membership. Please try again.' }, { status: 500 });
-    }
 
-    const result = rpc as { pass_token: string; membership_id: string } | null;
-    if (!result) {
-      return NextResponse.json({ error: 'Unexpected error. Please try again.' }, { status: 500 });
+      passToken = newRow.pass_token;
+      isNewCustomer = true;
     }
 
     return NextResponse.json({
-      passToken: result.pass_token,
-      isNew: true,
-      firstName: firstName.trim(),
+      passToken,
+      isNew: isNewCustomer,
+      firstName: cleanName,
       businessName: business.name,
       stamps: 0,
       rewards: 0,
     });
 
   } catch (err) {
-    console.error('counter-join error:', err);
+    console.error('counter-join exception:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
